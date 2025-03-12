@@ -8,6 +8,111 @@ class StoryGame:
         self.base_url = "http://localhost:11434/api/generate"
         self.context = "你是一个奇幻故事的讲述者。游戏刚开始。"
         self.history = []
+        self.global_state = {
+            "player_status": "一个普通人，刚开始冒险",
+            "story_core": "故事尚未开始",
+            "key_items": [],
+            "relationships": [],
+            "discoveries": []
+        }
+
+    def update_global_state(self, story, choice):
+        """更新全局状态"""
+        headers = {
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": "llama3.2",
+            "prompt": f"""你是一个简洁的状态记录器，请根据最新故事更新状态信息。严格按照以下格式返回：
+
+玩家状态：[20字以内概括玩家当前状态]
+故事核心：[30字以内概括主要剧情]
+关键道具：[最多3个重要物品]
+人际关系：[最多3个重要关系]
+重要发现：[最多3个重要发现]
+
+当前状态：
+{json.dumps(self.global_state, ensure_ascii=False, indent=2)}
+
+最新故事：
+{story}
+
+玩家选择：
+{choice}
+
+规则：
+1. 每项内容必须简短精炼
+2. 状态更新要反映最新变化
+3. 如果某项没有变化就保持原样
+4. 如果某项没有内容可以留空
+5. 每项内容不超过30个字""",
+            "stream": False
+        }
+
+        try:
+            response = requests.post(self.base_url, json=data, headers=headers)
+            response.raise_for_status()
+            result = response.json()['response']
+            
+            # 解析返回的状态更新
+            lines = result.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line.startswith('玩家状态：'):
+                    self.global_state['player_status'] = line[5:].strip()
+                elif line.startswith('故事核心：'):
+                    self.global_state['story_core'] = line[5:].strip()
+                elif line.startswith('关键道具：'):
+                    items = line[5:].strip()
+                    if items:
+                        self.global_state['key_items'] = [item.strip() for item in items.split('、') if item.strip()]
+                    else:
+                        self.global_state['key_items'] = []
+                elif line.startswith('人际关系：'):
+                    relations = line[5:].strip()
+                    if relations:
+                        self.global_state['relationships'] = [rel.strip() for rel in relations.split('、') if rel.strip()]
+                    else:
+                        self.global_state['relationships'] = []
+                elif line.startswith('重要发现：'):
+                    discoveries = line[5:].strip()
+                    if discoveries:
+                        self.global_state['discoveries'] = [disc.strip() for disc in discoveries.split('、') if disc.strip()]
+                    else:
+                        self.global_state['discoveries'] = []
+            
+            return True
+        except Exception as e:
+            print(f"警告：更新全局状态时出错：{e}")
+            return False
+
+    def display_global_state(self):
+        """显示当前的全局状态"""
+        print("\n" + "="*20 + " 当前状态 " + "="*20 + "\n")
+        
+        # 主要状态
+        if self.global_state['player_status']:
+            print(f"👤 玩家状态：{self.global_state['player_status']}")
+        if self.global_state['story_core']:
+            print(f"📜 故事核心：{self.global_state['story_core']}")
+        
+        # 只在有内容时显示次要信息
+        if self.global_state['key_items']:
+            print("\n🎒 关键道具：")
+            for item in self.global_state['key_items']:
+                print(f"  • {item}")
+        
+        if self.global_state['relationships']:
+            print("\n👥 人际关系：")
+            for rel in self.global_state['relationships']:
+                print(f"  • {rel}")
+        
+        if self.global_state['discoveries']:
+            print("\n💡 重要发现：")
+            for disc in self.global_state['discoveries']:
+                print(f"  • {disc}")
+        
+        print("\n" + "="*50)
 
     def generate_story_segment(self, prompt):
         headers = {
@@ -31,6 +136,10 @@ class StoryGame:
 6. 在故事中加入悬念和谜题元素
 7. 确保选项之间没有相似的内容
 8. 每个新的故事段落都应该是新的发展，而不是重复之前的内容
+9. 考虑当前的全局状态来生成合适的故事发展
+
+当前全局状态：
+{json.dumps(self.global_state, ensure_ascii=False, indent=2)}
 
 当前故事发展：{self.context}
 历史：{self.history}
@@ -98,6 +207,9 @@ class StoryGame:
         current_prompt = "开始一个奇幻冒险故事，设定一个有趣的开场。"
 
         while True:
+            # 显示当前状态
+            self.display_global_state()
+            
             # 生成故事段落和选项
             while True:
                 story_text = self.generate_story_segment(current_prompt)
@@ -112,6 +224,10 @@ class StoryGame:
 
             # 获取用户选择
             choice_num, chosen_option = self.get_user_choice(options)
+            
+            # 更新全局状态
+            print("\n正在更新状态...\n")
+            self.update_global_state(story, chosen_option)
             
             # 准备下一轮的提示
             current_prompt = f"基于用户选择了：{chosen_option}，继续故事。请确保新的故事情节与选择相呼应，并带来有趣的发展。"
